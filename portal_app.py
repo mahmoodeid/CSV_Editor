@@ -32,6 +32,7 @@
 #    pip install -r requirements.txt
 #    streamlit run portal_app.py
 
+# portal_app.py
 import streamlit as st
 import pandas as pd
 import io
@@ -52,47 +53,45 @@ if "file_order" not in st.session_state:
     st.session_state.file_order = []
 
 # Upload multiple CSV files
-df_upload = st.file_uploader(
+uploaded_files = st.file_uploader(
     "Upload CSV files (hold Ctrl/Cmd to select multiple)",
     type="csv",
     accept_multiple_files=True
 )
 
-if df_upload:
-    # Get the list of uploaded filenames
-    names = [f.name for f in df_upload]
+if uploaded_files:
+    names = [f.name for f in uploaded_files]
 
-    # Only (re)initialize ordering when empty or when the set of files changes
+    # Only init or re-init when the list is empty or the set of files changes
     if (not st.session_state.file_order) or (set(st.session_state.file_order) != set(names)):
         st.session_state.file_order = names
 
     st.subheader("🔀 Reorder Files")
-    # Map filename to file object
-    file_map = {f.name: f for f in df_upload}
+    file_map = {f.name: f for f in uploaded_files}
 
-    # Display each filename with Up/Down buttons
+    # Show each filename with Up/Down buttons
     for idx, fname in enumerate(st.session_state.file_order):
         cols = st.columns([6, 1, 1])
         cols[0].write(fname)
+
         up_disabled = idx == 0
         down_disabled = idx == len(st.session_state.file_order) - 1
 
         if cols[1].button("⬆️", key=f"up_{fname}", disabled=up_disabled):
-            # swap up
+            # swap up in session state
             st.session_state.file_order[idx - 1], st.session_state.file_order[idx] = (
                 st.session_state.file_order[idx],
                 st.session_state.file_order[idx - 1],
             )
-            st.experimental_rerun()
+
         if cols[2].button("⬇️", key=f"down_{fname}", disabled=down_disabled):
-            # swap down
+            # swap down in session state
             st.session_state.file_order[idx + 1], st.session_state.file_order[idx] = (
                 st.session_state.file_order[idx],
                 st.session_state.file_order[idx + 1],
             )
-            st.experimental_rerun()
 
-    # Once ordering is set, process & concatenate
+    # Once ordering is set, process & concatenate on demand
     if st.button("▶️ Process & Download"):
         dfs = []
         for fname in st.session_state.file_order:
@@ -107,7 +106,7 @@ if df_upload:
 
         st.download_button(
             label="📥 Download Combined CSV",
-            data=buffer,
+            data=buffer.getvalue(),
             file_name="combined.csv",
             mime="text/csv"
         )
