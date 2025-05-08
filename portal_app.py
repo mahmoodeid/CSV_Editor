@@ -35,6 +35,7 @@
 import streamlit as st
 import pandas as pd
 import io
+from streamlit_sortables import sort_items
 
 def process_df(df: pd.DataFrame) -> pd.DataFrame:
     """Strip decimals from any column ending in _X, _Y or _Z."""
@@ -45,69 +46,46 @@ def process_df(df: pd.DataFrame) -> pd.DataFrame:
 
 st.set_page_config(page_title="CSV Joiner Portal", layout="wide")
 st.title("📑 CSV Joiner Portal")
-st.write("Upload multiple CSVs, assign each a position, strip decimals from X/Y/Z, then merge in that order.")
+st.write("Upload multiple CSVs, drag to reorder them, strip decimals from joint X/Y/Z, and download the merged file.")
 
-# --- SESSION STATE SETUP ---
+# Keep track of the last set of filenames
 if "file_set" not in st.session_state:
     st.session_state.file_set = []
-# We'll have keys "order_0", "order_1", ... seeded below.
 
-# --- FILE UPLOADER ---
 uploaded_files = st.file_uploader(
-    "Upload CSV files (Ctrl/Cmd to select multiple)",
+    "Upload CSV files (hold Ctrl/Cmd to select multiple)",
     type="csv",
     accept_multiple_files=True
 )
 
 if uploaded_files:
+    # Extract names and detect changes
     names = [f.name for f in uploaded_files]
-
-    # If the set of files changed, reset our ordering state
-    if set(st.session_state.file_set) != set(names):
+    if set(names) != set(st.session_state.file_set):
         st.session_state.file_set = names.copy()
-        # Remove any old order_* keys
-        for key in list(st.session_state.keys()):
-            if key.startswith("order_"):
-                del st.session_state[key]
-        # Seed new order_* keys = their original indices
-        for idx in range(len(names)):
-            st.session_state[f"order_{idx}"] = idx
 
-    # --- ORDERING UI ---
-    st.subheader("🔀 Assign Positions to Files")
-    st.markdown("Lower numbers come first (0 = first).")
-    cols = st.columns([4, 1])
-    cols[0].markdown("**Filename**")
-    cols[1].markdown("**Position**")
+    st.subheader("🔀 Drag to Reorder Files")
+    st.info("Click and drag a filename to change its position in the merge order.")
 
-    for idx, fname in enumerate(st.session_state.file_set):
-        c1, c2 = st.columns([4,1])
-        c1.write(fname)
-        order_key = f"order_{idx}"
-        # number_input will read & write into st.session_state[order_key]
-        c2.number_input(
-            label="",
-            min_value=0,
-            max_value=len(names)-1,
-            key=order_key
-        )
+    # Render the drag-and-drop list
+    ordered_names = sort_items(
+        items=st.session_state.file_set,
+        key="sortable_file_list"
+    )
 
-    # Build final ordered list (ties broken by the original idx)
-    ordering = [
-        (st.session_state[f"order_{i}"], i, fname)
-        for i, fname in enumerate(st.session_state.file_set)
-    ]
-    ordered_names = [t[2] for t in sorted(ordering, key=lambda x: (x[0], x[1]))]
-
-    # --- PROCESS & DOWNLOAD ---
+    # Process & Download
     if st.button("▶️ Process & Download"):
+        # Build a map from name → UploadedFile
         file_map = {f.name: f for f in uploaded_files}
+
+        # Read, process, and collect DataFrames in the user-defined order
         dfs = []
         for fname in ordered_names:
             df = pd.read_csv(file_map[fname])
             dfs.append(process_df(df))
-        combined = pd.concat(dfs, ignore_index=True)
 
+        # Concatenate and offer download
+        combined = pd.concat(dfs, ignore_index=True)
         buf = io.StringIO()
         combined.to_csv(buf, index=False)
         buf.seek(0)
@@ -119,12 +97,12 @@ if uploaded_files:
             mime="text/csv"
         )
 
-# --- SIDEBAR INSTRUCTIONS ---
+# Sidebar instructions
 st.sidebar.header("ℹ️ Instructions")
 st.sidebar.markdown(
     """
-    1. Upload one or more CSV files.  
-    2. For each file, set its **Position** (0 = first, 1 = second, …).  
-    3. Click **Process & Download** to get the concatenated CSV in that order.
+    1. Upload your CSV files.  
+    2. Drag and drop filenames to reorder them.  
+    3. Click **Process & Download** to merge in that order.
     """
 )
