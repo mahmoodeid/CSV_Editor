@@ -44,14 +44,19 @@ def process_df(df: pd.DataFrame) -> pd.DataFrame:
             df[col] = df[col].round().astype("Int64")
     return df
 
+# ─── Page setup ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="CSV Joiner Portal", layout="wide")
 st.title("📑 CSV Joiner Portal")
-st.write("Upload multiple CSVs, drag to reorder them, strip decimals from joint X/Y/Z, and download the merged file.")
+st.write(
+    "Upload multiple CSV files, drag-and-drop to reorder them, "
+    "strip decimals from joint X/Y/Z columns, and download the combined CSV."
+)
 
-# Keep track of the last set of filenames
+# ─── Session State for file order ─────────────────────────────────────────────
 if "file_set" not in st.session_state:
     st.session_state.file_set = []
 
+# ─── File Uploader ─────────────────────────────────────────────────────────────
 uploaded_files = st.file_uploader(
     "Upload CSV files (hold Ctrl/Cmd to select multiple)",
     type="csv",
@@ -59,50 +64,51 @@ uploaded_files = st.file_uploader(
 )
 
 if uploaded_files:
-    # Extract names and detect changes
+    # Get the list of filenames
     names = [f.name for f in uploaded_files]
-    if set(names) != set(st.session_state.file_set):
+
+    # If the set of files changed, reset our stored order
+    if set(st.session_state.file_set) != set(names):
         st.session_state.file_set = names.copy()
 
+    # ─── Drag-and-Drop Reordering ───────────────────────────────────────────────
     st.subheader("🔀 Drag to Reorder Files")
-    st.info("Click and drag a filename to change its position in the merge order.")
-
-    # Render the drag-and-drop list
     ordered_names = sort_items(
         items=st.session_state.file_set,
-        key="sortable_file_list"
+        key="csv_joiner_sortable"   # unique key for this component
     )
+    # Persist the new order back into session state
+    st.session_state.file_set = ordered_names
 
-    # Process & Download
+    # ─── Process & Download ────────────────────────────────────────────────────
     if st.button("▶️ Process & Download"):
-        # Build a map from name → UploadedFile
+        # Map names back to UploadedFile objects
         file_map = {f.name: f for f in uploaded_files}
-
-        # Read, process, and collect DataFrames in the user-defined order
         dfs = []
         for fname in ordered_names:
             df = pd.read_csv(file_map[fname])
             dfs.append(process_df(df))
 
-        # Concatenate and offer download
         combined = pd.concat(dfs, ignore_index=True)
-        buf = io.StringIO()
-        combined.to_csv(buf, index=False)
-        buf.seek(0)
+
+        # Prepare CSV for download
+        buffer = io.StringIO()
+        combined.to_csv(buffer, index=False)
+        buffer.seek(0)
 
         st.download_button(
             label="📥 Download Combined CSV",
-            data=buf.getvalue(),
+            data=buffer.getvalue(),
             file_name="combined.csv",
             mime="text/csv"
         )
 
-# Sidebar instructions
+# ─── Sidebar Instructions ─────────────────────────────────────────────────────
 st.sidebar.header("ℹ️ Instructions")
 st.sidebar.markdown(
     """
-    1. Upload your CSV files.  
-    2. Drag and drop filenames to reorder them.  
-    3. Click **Process & Download** to merge in that order.
+    1. Upload one or more CSV files.  
+    2. Drag and drop the filenames to set your merge order.  
+    3. Click **Process & Download** to get the concatenated CSV.
     """
 )
