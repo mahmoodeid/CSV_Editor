@@ -32,6 +32,8 @@
 #    pip install -r requirements.txt
 #    streamlit run portal_app.py
 
+# portal_app.py
+
 import streamlit as st
 import pandas as pd
 import io
@@ -49,7 +51,8 @@ st.set_page_config(page_title="CSV Joiner Portal", layout="wide")
 st.title("📑 CSV Joiner Portal")
 st.write(
     "Upload multiple CSV files, drag-and-drop to reorder them, "
-    "strip decimals from joint X/Y/Z columns, and download the combined CSV."
+    "optionally drop confidence columns, strip decimals from X/Y/Z, "
+    "then download the combined CSV."
 )
 
 # ─── Session State for file order ─────────────────────────────────────────────
@@ -64,10 +67,10 @@ uploaded_files = st.file_uploader(
 )
 
 if uploaded_files:
-    # Get the list of filenames
+    # 1) Get the list of filenames
     names = [f.name for f in uploaded_files]
 
-    # If the set of files changed, reset our stored order
+    # 2) If the set of files changed, reset our stored order
     if set(st.session_state.file_set) != set(names):
         st.session_state.file_set = names.copy()
 
@@ -80,25 +83,37 @@ if uploaded_files:
     # Persist the new order back into session state
     st.session_state.file_set = ordered_names
 
+    # ─── Confidence–column toggle ───────────────────────────────────────────────
+    remove_confidence = st.checkbox(
+        "🗑️ Remove confidence columns",
+        help="Tick to drop all columns ending in _Confidence before merging"
+    )
+
     # ─── Process & Download ────────────────────────────────────────────────────
     if st.button("▶️ Process & Download"):
-        # Map names back to UploadedFile objects
         file_map = {f.name: f for f in uploaded_files}
         dfs = []
         for fname in ordered_names:
             df = pd.read_csv(file_map[fname])
-            dfs.append(process_df(df))
 
+            # Optionally drop any *_Confidence columns
+            if remove_confidence:
+                conf_cols = [c for c in df.columns if c.endswith("_Confidence")]
+                df = df.drop(columns=conf_cols, errors="ignore")
+
+            # Strip decimals from X/Y/Z
+            df = process_df(df)
+            dfs.append(df)
+
+        # Concatenate and offer download
         combined = pd.concat(dfs, ignore_index=True)
-
-        # Prepare CSV for download
-        buffer = io.StringIO()
-        combined.to_csv(buffer, index=False)
-        buffer.seek(0)
+        buf = io.StringIO()
+        combined.to_csv(buf, index=False)
+        buf.seek(0)
 
         st.download_button(
             label="📥 Download Combined CSV",
-            data=buffer.getvalue(),
+            data=buf.getvalue(),
             file_name="combined.csv",
             mime="text/csv"
         )
@@ -109,6 +124,7 @@ st.sidebar.markdown(
     """
     1. Upload one or more CSV files.  
     2. Drag and drop the filenames to set your merge order.  
-    3. Click **Process & Download** to get the concatenated CSV.
+    3. (Optional) Tick **Remove confidence columns** to drop any *_Confidence fields.  
+    4. Click **Process & Download** to get the concatenated CSV.
     """
 )
