@@ -34,10 +34,10 @@
 
 import streamlit as st
 import pandas as pd
-from io import BytesIO
+import io
 
-# Function to remove decimals from columns ending in _X, _Y, _Z
-def remove_decimals(df: pd.DataFrame) -> pd.DataFrame:
+def process_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Strip decimals from any column ending in _X, _Y or _Z."""
     for col in df.columns:
         if col.endswith(("_X", "_Y", "_Z")):
             df[col] = df[col].round().astype("Int64")
@@ -59,41 +59,52 @@ df_upload = st.file_uploader(
 )
 
 if df_upload:
-    # Update session state order if filenames list changes
+    # Get the list of uploaded filenames
     names = [f.name for f in df_upload]
-    if st.session_state.file_order != names:
+
+    # Only (re)initialize ordering when empty or when the set of files changes
+    if (not st.session_state.file_order) or (set(st.session_state.file_order) != set(names)):
         st.session_state.file_order = names
 
     st.subheader("🔀 Reorder Files")
     # Map filename to file object
     file_map = {f.name: f for f in df_upload}
-    
-    # Display filenames with Up/Down buttons
+
+    # Display each filename with Up/Down buttons
     for idx, fname in enumerate(st.session_state.file_order):
         cols = st.columns([6, 1, 1])
         cols[0].write(fname)
         up_disabled = idx == 0
         down_disabled = idx == len(st.session_state.file_order) - 1
-        if cols[1].button("⬆️ Up", key=f"up_{idx}", disabled=up_disabled):
+
+        if cols[1].button("⬆️", key=f"up_{fname}", disabled=up_disabled):
+            # swap up
             st.session_state.file_order[idx - 1], st.session_state.file_order[idx] = (
-                st.session_state.file_order[idx], st.session_state.file_order[idx - 1]
+                st.session_state.file_order[idx],
+                st.session_state.file_order[idx - 1],
             )
-        if cols[2].button("⬇️ Down", key=f"down_{idx}", disabled=down_disabled):
+            st.experimental_rerun()
+        if cols[2].button("⬇️", key=f"down_{fname}", disabled=down_disabled):
+            # swap down
             st.session_state.file_order[idx + 1], st.session_state.file_order[idx] = (
-                st.session_state.file_order[idx], st.session_state.file_order[idx + 1]
+                st.session_state.file_order[idx],
+                st.session_state.file_order[idx + 1],
             )
+            st.experimental_rerun()
 
-    # Process & provide download
-    if st.button("✅ Process & Download Combined CSV"):
+    # Once ordering is set, process & concatenate
+    if st.button("▶️ Process & Download"):
         dfs = []
-        for name in st.session_state.file_order:
-            df = pd.read_csv(file_map[name])
-            dfs.append(remove_decimals(df))
-        combined = pd.concat(dfs, ignore_index=True)
+        for fname in st.session_state.file_order:
+            file_obj = file_map[fname]
+            df = pd.read_csv(file_obj)
+            dfs.append(process_df(df))
 
-        buffer = BytesIO()
+        combined = pd.concat(dfs, ignore_index=True)
+        buffer = io.StringIO()
         combined.to_csv(buffer, index=False)
         buffer.seek(0)
+
         st.download_button(
             label="📥 Download Combined CSV",
             data=buffer,
